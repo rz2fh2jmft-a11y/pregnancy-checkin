@@ -1,0 +1,40 @@
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:#fff5f7;color:#4a3b40;font-size:17px}
+header{position:sticky;top:0;z-index:5;background:#fff5f7;padding:calc(env(safe-area-inset-top) + 10px) 18px 8px}
+h1{margin:0;font-size:26px}
+main{padding:4px 16px calc(96px + env(safe-area-inset-bottom))}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #f3d6de;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;padding:8px 0 6px;font-size:12px;color:#a8939a;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button span{font-size:22px}nav button.on{color:#e0607e;font-weight:600}
+.card{background:#fff;border-radius:18px;padding:14px 16px;margin:12px 0;box-shadow:0 2px 10px #f0c9d433}
+.prog{height:12px;background:#fbe3e9;border-radius:6px;overflow:hidden;margin-top:8px}.prog i{display:block;height:100%;background:linear-gradient(90deg,#f7a1b5,#e0607e);transition:width .3s}
+.slot h3{margin:4px 0 6px;font-size:16px;color:#c0607a}
+.item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-top:1px solid #fbe9ee;min-height:60px}
+.item:first-of-type{border-top:0}
+.chk{width:44px;height:44px;flex:none;border-radius:50%;border:2.5px solid #f2b3c2;display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;background:#fff}
+.item.done .chk{background:#e0607e;border-color:#e0607e}.item.done .nm{color:#b9a5ab;text-decoration:line-through}
+.nm{font-weight:600}.sub{font-size:13px;color:#a8939a;margin-top:2px}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:15px;font-size:17px;font-weight:600;background:#e0607e;color:#fff;margin:10px 0}
+.btn.ghost{background:#fbe3e9;color:#c0506e}.btn.danger{background:#fff;color:#d33;border:1px solid #f3c0c0}
+.row{display:flex;gap:8px}.row>*{flex:1}
+label{display:block;font-size:14px;color:#8d7980;margin:12px 0 4px}
+input,select,textarea{width:100%;font-size:17px;padding:12px;border:1px solid #f0cdd6;border-radius:12px;background:#fff;color:inherit;font-family:inherit}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{border:1px solid #f0cdd6;background:#fff;border-radius:20px;padding:9px 14px;font-size:15px;color:#8d7980}
+.chips button.on{background:#e0607e;color:#fff;border-color:#e0607e}
+#modal{position:fixed;inset:0;background:#0005;z-index:20;display:flex;align-items:flex-end}
+.sheet{background:#fff8fa;width:100%;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+.sheet h2{margin:0 0 6px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center}
+.cal .w{font-size:12px;color:#a8939a}
+.cal .d{aspect-ratio:1;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:15px;background:#fff;border:0;color:inherit}
+.cal .d.full{background:#e0607e;color:#fff}.cal .d.part{background:#f9c5d2}.cal .d.miss{background:#f1eaec;color:#a8939a}.cal .d.none{background:transparent;color:#c9bcc0}
+.cal .d.today{outline:2px solid #e0607e}.cal .d.fut{opacity:.45}
+.legend{display:flex;gap:12px;font-size:12px;color:#8d7980;margin-top:10px;flex-wrap:wrap}.legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-1px}
+.mhead{display:flex;align-items:center;justify-content:space-between}.mhead button{border:0;background:#fbe3e9;color:#c0506e;border-radius:12px;width:44px;height:44px;font-size:20px}
+.empty{text-align:center;color:#a8939a;padding:30px 10px}
+.tag{font-size:12px;background:#fbe3e9;color:#c0506e;border-radius:8px;padding:2px 8px;margin-left:6px}
+.tag.off{background:#eee;color:#999}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom));background:#4a3b40;color:#fff;padding:10px 18px;border-radius:20px;z-index:30;font-size:15px}
+.wl{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid #fbe9ee}
+.x{border:0;background:none;color:#c9a0aa;font-size:20px;padding:6px 10px}
+[hidden]{display:none!important}
