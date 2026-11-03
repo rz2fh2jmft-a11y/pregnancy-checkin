@@ -21,12 +21,15 @@ const slotName=id=>(SLOTS.find(x=>x[0]===id)||[,id])[1];
 function blank(){return{schemaVersion:SCHEMA,supps:[],logs:{},weights:[],preg:null,meta:{}}}
 function migrate(v){
   const o=blank();o.logs=v.logs||{};o.weights=v.weights||[];o.preg=v.preg||null;o.meta=v.meta||{};
-  o.supps=(v.supps||[]).map(s=>{if(s.freqHist)return s;
+  o.supps=(v.supps||[]).map(s=>{if(s.freqHist){if(!s.pauses)splitOff(s);return s}
     const f=s.freq||{type:'daily'},st=f.start||s.created||today();
     const r={id:s.id,name:s.name,dose:s.dose||'',note:s.note||'',slots:s.slots||['am'],created:s.created||st,
       freqHist:[{from:st,type:f.type,n:f.type==='alt'?2:(+f.n||2),days:f.days||[],start:st}]};
-    if(s.active===false)r.freqHist.push({from:today(),type:'off'});return r});
+    r.pauses=s.active===false?[{from:today()}]:[];return r});
   return o}
+function splitOff(s){const P=[];let open=null;const F=[];
+  for(const v of s.freqHist){if(v.type==='off'){if(!open){open={from:v.from};P.push(open)}}else{if(open){open.to=addD(v.from,-1);if(open.to<open.from)P.pop();open=null}F.push(v)}}
+  if(!F.length)F.push({from:s.created||today(),type:'daily',start:s.created||today()});s.freqHist=F;s.pauses=P}
 function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(v&&Array.isArray(v.supps))return migrate(v)}catch(e){}return blank()}
 let S=load();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){toast('保存失败，请先导出备份');return false}}
@@ -37,16 +40,20 @@ let tt;function toast(t,undo){const e=$('#toast');e.innerHTML=esc(t)+(undo?' <bu
 /* ---------- frequency ---------- */
 function ver(s,date){let v=null;for(const x of s.freqHist)if(x.from<=date)v=x;return v}
 function isDue(s,date){
-  if(s.deletedAt&&date>=s.deletedAt)return false;
-  const v=ver(s,date);if(!v||v.type==='off')return false;
+  if(s.deletedAt&&date>s.deletedAt)return false;
+  if((s.pauses||[]).some(p=>p.from<=date&&(!p.to||date<=p.to)))return false;
+  const v=ver(s,date);if(!v)return false;
   if(date<v.start)return false;
   if(v.type==='daily')return true;
   if(v.type==='weekly')return (v.days||[]).includes(wday(date));
   const n=v.type==='alt'?2:Math.max(2,+v.n||2);
   return (dnum(date)-dnum(v.start))%n===0}
 const cur=s=>s.freqHist[s.freqHist.length-1];
-const lastRule=s=>[...s.freqHist].reverse().find(x=>x.type!=='off')||cur(s);
-const paused=s=>cur(s).type==='off';
+const lastRule=s=>cur(s);
+const openPause=s=>{const P=s.pauses||[],p=P[P.length-1];return p&&!p.to?p:null};
+const paused=s=>!!openPause(s);
+function pause(s){(s.pauses=s.pauses||[]).push({from:today()})}
+function resume(s){const p=openPause(s);if(!p)return;if(p.from>=today())s.pauses.pop();else p.to=addD(today(),-1)}
 function ruleText(v){const st=v.start>today()?`，${fmtS(v.start)}开始`:'';
   if(v.type==='daily')return '每天'+st;if(v.type==='alt')return `隔天（${fmtS(v.start)}起）`;
   if(v.type==='everyN')return `每${v.n}天一次（${fmtS(v.start)}起）`;
@@ -93,7 +100,7 @@ function taskList(date){
     h+=`<div class="card slot"><h3>${ic} ${nm}</h3>`+g.map(x=>`<div class="item ${isDone(date,x.k)?'done':''}" data-k="${esc(x.k)}" data-date="${date}" role="button"><div class="chk">✓</div><div><div class="nm">${esc(x.s.name)}</div>${x.s.dose||x.s.note?`<div class="sub">${esc([x.s.dose,x.s.note].filter(Boolean).join(' · '))}</div>`:''}</div></div>`).join('')+'</div>'}
   return h}
 const views={
- today(){const d=today();return `<div class="sub" style="margin:0 2px">${fmtD(d)}</div>`+pregLine()+reminder()+taskList(d)+backupNag()},
+ today(){const d=today();return (navigator.standalone===false?'<div class="card note">📲 添加到主屏幕后使用，数据更安全：点 Safari 底部「分享」→「添加到主屏幕」</div>':'')+`<div class="sub" style="margin:0 2px">${fmtD(d)}</div>`+pregLine()+reminder()+taskList(d)+backupNag()},
  history(){const m=views.m||(views.m=today().slice(0,7));const[y,mo]=m.split('-').map(Number);
   const first=`${y}-${pad(mo)}-01`,days=new Date(y,mo,0).getDate(),off=(wday(first)+6)%7,td=today(),E=edd();
   let h=`<div class="card"><div class="mhead"><button data-act="prevm" aria-label="上个月">‹</button><b>${y}年${mo}月</b><button data-act="nextm" aria-label="下个月">›</button></div><div class="cal">`+WK.map(w=>`<div class="w">${WD[w]}</div>`).join('')+'<div></div>'.repeat(off);
@@ -109,15 +116,16 @@ const views={
   h+=`<div class="card"><b>体重曲线</b><div class="sub">最新 ${w[w.length-1].kg} kg · 累计${ch>=0?'+':''}${ch.toFixed(1)} kg</div>${chart(w)}</div>`;
   return h+'<div class="card"><b>记录</b>'+w.slice().reverse().map((x,i)=>{const prev=w[w.length-2-i];const df=prev?x.kg-prev.kg:null;const g=ga(x.date);return `<div class="wl"><div>${fmtD(x.date)}<div class="sub">${g?`孕${g.w}+${g.d} `:''}${df===null?'':(df>=0?'+':'')+df.toFixed(1)+' kg'}</div></div><div><b>${x.kg}</b> kg<button class="x" data-delw="${x.date}" aria-label="删除">✕</button></div></div>`}).join('')+'</div>'},
  supps(){const L=S.supps.filter(s=>!s.deletedAt);let h=`<div class="disc">⚕️ ${DISC}</div><button class="btn" data-act="newsupp">＋ 添加补剂</button>`;
-  if(!L.length)return h+'<div class="card empty">添加补剂后，每天打开就能看到该吃什么 🌷</div>';
-  return h+L.map(s=>`<button class="card sc" data-edit="${s.id}"><div class="nm">${esc(s.name)}${paused(s)?'<span class="tag off">已暂停</span>':''}</div><div class="sub">${[s.dose,ruleText(lastRule(s)),s.slots.map(slotName).join('/')].filter(Boolean).map(esc).join(' · ')}</div>${s.note?`<div class="sub">${esc(s.note)}</div>`:''}</button>`).join('')},
+  const Dl=S.supps.filter(s=>s.deletedAt);const del=Dl.length?`<details class="card"><summary>已删除（${Dl.length}）</summary>${Dl.map(s=>`<div class="wl"><div>${esc(s.name)}<div class="sub">${fmtS(s.deletedAt)}删除</div></div><div><button class="lnk" data-act="undel" data-id="${s.id}">恢复</button><button class="lnk" data-act="harddel" data-id="${s.id}">彻底删除</button></div></div>`).join('')}</details>`:'';
+  if(!L.length)return h+'<div class="card empty">添加补剂后，每天打开就能看到该吃什么 🌷</div>'+del;
+  return h+L.map(s=>`<button class="card sc" data-edit="${s.id}"><div class="nm">${esc(s.name)}${paused(s)?'<span class="tag off">已暂停</span>':''}</div><div class="sub">${[s.dose,ruleText(lastRule(s)),s.slots.map(slotName).join('/')].filter(Boolean).map(esc).join(' · ')}</div>${s.note?`<div class="sub">${esc(s.note)}</div>`:''}</button>`).join('')+del},
  settings(){const L=S.meta.lastExport;const ago=L?dnum(today())-dnum(L.slice(0,10)):null;
   return `<div class="card"><b>🤰 孕周设置</b><div class="sub">${lmp()?`末次月经 ${fmtS(lmp())} · 预产期 ${fmtS(edd())}${S.preg.src==='edd'?'（已按产检校正）':''}`:'还没有设置'}</div><button class="btn ghost" data-act="preg">${lmp()?'修改':'设置'}孕周</button></div>
 <div class="card"><b>⏰ 打卡提醒时间</b><div class="sub">打开 App 时，到点还没打卡的时段会在今日页顶部温和提醒（不会推送通知）。</div><div class="times">${SLOTS.map(([id,nm,ic])=>`<label>${ic} ${nm}<input type="time" data-slottime="${id}" value="${slotTime(id)}"></label>`).join('')}</div></div>
 <div class="card"><b>💾 数据备份</b><div class="sub">上次备份：${L?(ago===0?'今天':ago+' 天前'):'还没有备份过'}</div><div class="sub" id="persist">持久存储：检查中…</div>
 <div class="note">📱 主屏幕图标里的数据与 Safari 浏览器里的数据是分开的；删除主屏幕图标或清理网站数据会清空记录，请定期导出备份，保存到「文件」App。</div>
 <button class="btn" data-act="export">导出备份</button><button class="btn ghost" data-act="import">从备份恢复</button>${localStorage.getItem(BAK)?'<button class="btn ghost" data-act="undoimp">撤销上次恢复</button>':''}<input type="file" id="imp" accept=".json,application/json" hidden></div>
-<div class="card sub">补剂 ${S.supps.filter(s=>!s.deletedAt).length} 种 · 打卡 ${Object.keys(S.logs).length} 天 · 体重 ${S.weights.length} 条</div><div class="disc">⚕️ ${DISC}</div>`}
+<button class="btn ghost" data-act="onb" data-step="0">查看使用引导</button><div class="card sub">补剂 ${S.supps.filter(s=>!s.deletedAt).length} 种 · 打卡 ${Object.keys(S.logs).length} 天 · 体重 ${S.weights.length} 条</div><div class="disc">⚕️ ${DISC}</div>`}
 };
 const TITLES={today:'今日打卡',history:'历史记录',weight:'体重记录',supps:'我的补剂',settings:'设置与备份'};
 let tab='today';
@@ -147,11 +155,11 @@ function savePreg(){const a=$('#p_lmp').value,b=$('#p_edd').value,t=today();let 
     if(L>t)return toast('这个预产期推算的末次月经还没到，请再确认一下')}
   else if(a){if(a>t)return toast('日期还没到，请再确认一下');if(dnum(t)-dnum(a)>300&&!confirm('日期距今较久，请确认是否填写正确'))return;L=a;src='lmp'}
   else return toast('请填写末次月经日期或预产期');
-  S.preg={lmp:L,src};save();closeModal();toast('已保存孕周设置 ✓')}
+  S.preg={lmp:L,src};save();if(S.meta.onbPreg&&!S.meta.onboarded){S.meta.onbPreg=false;onboard(2);return}closeModal();toast('已保存孕周设置 ✓')}
 
 let ed=null;
 const PRESETS=['DHA','钙','铁','维生素D'];
-function suppModal(s){const t=today();ed=s?{...JSON.parse(JSON.stringify(s)),_isEdit:true}:{id:'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:'',dose:'',note:'',slots:['am'],freqHist:[],created:t};
+function suppModal(s){const t=today();ed=s?{...JSON.parse(JSON.stringify(s)),_isEdit:true}:{id:'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:'',dose:'',note:'',slots:['am'],freqHist:[],pauses:[],created:t};
   const r=s?lastRule(s):null;ed.f=r?{type:r.type,n:r.n||3,days:[...(r.days||[])],start:r.start}:{type:'daily',n:3,days:[],start:t};drawSupp()}
 function drawSupp(){const f=ed.f;openModal(`<h2>${ed._isEdit?'编辑补剂':'添加补剂'}</h2><div class="disc">⚕️ ${DISC}</div>
 ${ed._isEdit?'':`<label>快捷添加（只填名称）</label><div class="chips">${PRESETS.map(p=>`<button data-preset="${p}">${p}</button>`).join('')}</div>`}
@@ -162,13 +170,19 @@ ${ed._isEdit?'':`<label>快捷添加（只填名称）</label><div class="chips"
 ${f.type==='everyN'?`<label>每几天吃一次（2–30）</label><input id="f_n" type="number" inputmode="numeric" min="2" max="30" value="${f.n||3}">`:''}
 ${f.type==='weekly'?`<label>每周哪几天</label><div class="chips">${WK.map(d=>`<button data-wd="${d}" class="${f.days.includes(d)?'on':''}">周${WD[d]}</button>`).join('')}</div>`:''}
 <label>${f.type==='alt'||f.type==='everyN'?'从哪天开始吃（这天算第一次）':'从哪天开始'}</label><input id="f_start" type="date" value="${f.start}">
-${ed._isEdit?'<div class="sub">修改频次只影响今天及以后，之前的记录不会变。</div>':''}
+${ed._isEdit?`<div class="sub">修改频次只影响今天及以后，之前的记录不会变。${paused(ed)?'<br>当前已暂停，新频次将在恢复后生效。':''}</div>`:''}
 <label>备注</label><input id="f_note" value="${esc(ed.note)}" placeholder="如 饭后吃、和钙隔开">
 ${ed._isEdit?`<button class="btn ghost" data-act="pause">${paused(ed)?'从今天恢复服用':'从今天暂停服用'}</button><button class="btn danger" data-act="delsupp">删除</button>`:''}`,
 `<div class="row"><button class="btn ghost" data-act="close">取消</button><button class="btn" data-act="savesupp">保存</button></div>`)}
 function grab(){for(const k of['name','dose','note']){const e=$('#f_'+k);if(e)ed[k]=e.value.trim()}const n=$('#f_n');if(n)ed.f.n=parseInt(n.value)||0;const st=$('#f_start');if(st&&isD(st.value))ed.f.start=st.value}
 function commit(){const o={...ed};delete o._isEdit;delete o.f;const i=S.supps.findIndex(x=>x.id===o.id);if(i>=0)S.supps[i]=o;else S.supps.push(o);save()}
 
+const ONB=[()=>`<h2>欢迎 🌷</h2><p>这里记录每天的补剂打卡、孕周和体重。</p><div class="disc">⚕️ ${DISC}</div><p class="sub">本应用不提供任何剂量或用药建议，补剂名称、剂量、频次请按医生意见填写。</p>`,
+ ()=>`<h2>设置孕周（可跳过）</h2><p>填写末次月经第一天，就能看到孕周和预产期；B超校正后可在「设置」页改预产期。</p>`,
+ ()=>`<h2>记得备份 💾</h2><div class="note">📱 主屏幕图标里的数据与 Safari 浏览器里的数据是分开的；删除主屏幕图标或清理网站数据会清空记录，请定期在「设置」页导出备份。</div>${navigator.standalone?'':'<p>建议先添加到主屏幕：点 Safari 底部「分享」→「添加到主屏幕」，以后从桌面图标打开。</p>'}`];
+function onboard(i){const last=i===ONB.length-1;openModal(`<div class="sub">${i+1} / ${ONB.length}</div>`+ONB[i](),
+ (i===1?`<div class="row"><button class="btn ghost" data-act="onb" data-step="2">跳过</button><button class="btn" data-act="onbpreg">去设置</button></div>`:
+ `<button class="btn" data-act="${last?'onbdone':'onb'}" data-step="${i+1}">${last?'开始使用':'下一步'}</button>`))}
 /* ---------- events ---------- */
 document.addEventListener('click',e=>{const t=e.target.closest('button,[data-k]');if(!t||t.id==='undo')return;const D=t.dataset;
  if(D.tab){if(D.tab==='history'&&tab!=='history')views.m=null;tab=D.tab;render();scrollTo(0,0);return}
@@ -189,10 +203,16 @@ document.addEventListener('click',e=>{const t=e.target.closest('button,[data-k]'
    if(f.type==='weekly'&&!f.days.length)return toast('请选择每周哪几天');if(f.type==='everyN'&&!(f.n>=2&&f.n<=30))return toast('间隔天数请填 2–30');
    const v={type:f.type,n:f.type==='alt'?2:f.type==='everyN'?f.n:undefined,days:f.type==='weekly'?f.days:undefined,start:f.start};
    if(!ed.freqHist.length||!sameRule(lastRule(ed),v))pushVer(ed,v);
-   commit();closeModal();toast('已保存 ✓')}
- else if(A==='pause'){grab();if(paused(ed)){const r=lastRule(ed);pushVer(ed,{...r,start:today()});}else pushVer(ed,{type:'off',start:today()});commit();closeModal();toast(paused(ed)?'已暂停，之前的记录不变':'已恢复，从今天开始计算')}
- else if(A==='delsupp'){if(confirm(`确定删除「${ed.name}」？之前的打卡记录和统计会保留。`)){ed.deletedAt=today();commit();closeModal();toast('已删除')}}
+   const dup=S.supps.some(x=>!x.deletedAt&&x.id!==ed.id&&x.name.trim()===ed.name);if(dup&&!confirm('已有同名补剂，确定再添加一个吗？'))return;
+   commit();closeModal();toast(paused(ed)?'已保存。当前已暂停，新频次将在恢复后生效':'已保存 ✓')}
+ else if(A==='pause'){grab();if(paused(ed))resume(ed);else pause(ed);commit();closeModal();toast(paused(ed)?'已暂停，之前的记录不变':'已恢复，从今天开始计算')}
+ else if(A==='delsupp'){if(confirm(`确定删除「${ed.name}」？之前的打卡记录和统计会保留。`)){ed.deletedAt=today();commit();closeModal();toast('已删除，可在补剂页底部恢复')}}
+ else if(A==='undel'){const s=S.supps.find(x=>x.id===D.id);delete s.deletedAt;save();render();toast('已恢复')}
+ else if(A==='harddel'){const s=S.supps.find(x=>x.id===D.id);if(confirm(`彻底删除「${s.name}」？这款补剂的历史统计会一并清除，无法恢复。`)){S.supps=S.supps.filter(x=>x!==s);for(const d in S.logs){for(const k in S.logs[d])if(k.startsWith(s.id+'|'))delete S.logs[d][k];if(!Object.keys(S.logs[d]).length)delete S.logs[d]}save();render();toast('已彻底删除')}}
+ else if(A==='onb')onboard(+D.step);
+ else if(A==='onbdone'){S.meta.onboarded=true;save();closeModal()}
  else if(A==='preg')pregModal();
+ else if(A==='onbpreg'){S.meta.onbPreg=true;pregModal()}
  else if(A==='savepreg')savePreg();
  else if(A==='clearpreg'){if(confirm('清除孕周设置？')){S.preg=null;save();closeModal()}}
  else if(A==='addw'){const d=$('#wd').value,k=parseFloat($('#wk').value);if(!isD(d)||d>today())return toast('请选择今天或之前的日期');if(!(k>=30&&k<=200))return toast('请输入 30–200 之间的体重');
@@ -234,3 +254,4 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkDay(
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(_){}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 render();
+if(!S.meta.onboarded&&!S.supps.length&&!S.weights.length)onboard(0);
