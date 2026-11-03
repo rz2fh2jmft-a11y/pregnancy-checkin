@@ -1,0 +1,21 @@
+name: setup
+on: [push, workflow_dispatch]
+permissions:
+  contents: write
+  pages: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: decode icons
+        run: |
+          if ls icons-b64/*.b64 >/dev/null 2>&1; then
+            for f in icons-b64/*.b64; do base64 -d "$f" > "$(basename "$f" .b64).png"; done
+            git rm -rq icons-b64
+            git config user.name bot; git config user.email bot@users.noreply.github.com
+            git add *.png; git commit -m "Add icons"; git push
+          fi
+      - name: enable pages
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: gh api -X POST repos/${{ github.repository }}/pages -f "source[branch]=main" -f "source[path]=/" || gh api repos/${{ github.repository }}/pages
